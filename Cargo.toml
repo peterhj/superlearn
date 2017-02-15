@@ -9,5 +9,6 @@ path = "src/lib.rs"
 
 [dependencies]
 arraydiff = { path = "../arraydiff" }
+byteorder = "*"
 densearray = "*"
 sharedmem = "*"

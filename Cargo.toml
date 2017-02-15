@@ -8,7 +8,10 @@ name = "superlearn"
 path = "src/lib.rs"
 
 [dependencies]
+rand = "*"
 arraydiff = { path = "../arraydiff" }
 byteorder = "*"
 densearray = "*"
+rng = "*"
 sharedmem = "*"
+tar = "*"

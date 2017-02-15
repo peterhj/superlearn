@@ -1,3 +1,7 @@
+use rng::xorshift::*;
+
+use rand::{Rng};
+
 pub trait IndexedData {
   type Item;
 
@@ -5,6 +9,7 @@ pub trait IndexedData {
   fn get(&mut self, idx: usize) -> Self::Item;
 }
 
+#[derive(Clone)]
 pub struct SliceData<Inner> where Inner: IndexedData {
   lower:    usize,
   upper:    usize,
@@ -24,6 +29,7 @@ impl<Inner> IndexedData for SliceData<Inner> where Inner: IndexedData {
   }
 }
 
+#[derive(Clone)]
 pub struct CycleData<Inner> where Inner: IndexedData {
   counter:  usize,
   inner:    Inner,
@@ -43,7 +49,9 @@ impl<Inner> Iterator for CycleData<Inner> where Inner: IndexedData {
   }
 }
 
+#[derive(Clone)]
 pub struct RandomSampleData<Inner> where Inner: IndexedData {
+  rng:      Xorshiftplus128Rng,
   inner:    Inner,
 }
 
@@ -51,6 +59,8 @@ impl<Inner> Iterator for RandomSampleData<Inner> where Inner: IndexedData {
   type Item = Inner::Item;
 
   fn next(&mut self) -> Option<Self::Item> {
-    unimplemented!();
+    let idx = self.rng.gen_range(0, self.inner.len());
+    let item = self.inner.get(idx);
+    Some(item)
   }
 }

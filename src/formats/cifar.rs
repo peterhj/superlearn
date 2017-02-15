@@ -6,8 +6,6 @@ use sharedmem::{MemoryMap, SharedMem};
 use std::fs::{File};
 use std::marker::{PhantomData};
 use std::path::{PathBuf};
-use std::rc::{Rc};
-use std::sync::{Arc};
 
 pub trait KrizhevskyCifarFlavor {
   fn item_size() -> usize;
@@ -46,7 +44,7 @@ pub struct KrizhevskyCifarData<Flavor> {
 }
 
 impl<Flavor> KrizhevskyCifarData<Flavor> where Flavor: KrizhevskyCifarFlavor {
-  pub fn new(data_path: PathBuf) -> KrizhevskyCifarData<Flavor> {
+  pub fn open(data_path: PathBuf) -> KrizhevskyCifarData<Flavor> {
     let data_file = File::open(&data_path).unwrap();
     let file_meta = data_file.metadata().unwrap();
     let file_sz = file_meta.len() as usize;

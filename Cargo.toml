@@ -1,0 +1,13 @@
+[package]
+name = "superlearn"
+version = "0.0.1"
+authors = ["Peter Jin <peterhaijin@gmail.com>"]
+
+[lib]
+name = "superlearn"
+path = "src/lib.rs"
+
+[dependencies]
+arraydiff = { path = "../arraydiff" }
+densearray = "*"
+sharedmem = "*"

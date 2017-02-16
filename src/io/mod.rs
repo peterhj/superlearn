@@ -27,7 +27,7 @@ pub trait IndexedData {
     }
   }
 
-  fn randomly_sample(self, mut seed_rng: ChaChaRng) -> RandomSampleData<Self> where Self: Sized {
+  fn randomly_sample(self, seed_rng: &mut ChaChaRng) -> RandomSampleData<Self> where Self: Sized {
     RandomSampleData{
       rng:      Xorshiftplus128Rng::from_seed([seed_rng.next_u64(), seed_rng.next_u64()]),
       inner:    self,

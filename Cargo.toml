@@ -9,8 +9,10 @@ path = "src/lib.rs"
 
 [dependencies]
 rand = "*"
+rustc-serialize = "*"
 arraydiff = { path = "../arraydiff" }
 byteorder = "*"
+csv = "*"
 densearray = "*"
 rng = "*"
 sharedmem = "*"

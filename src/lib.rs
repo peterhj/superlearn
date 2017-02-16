@@ -2,6 +2,7 @@
 
 extern crate arraydiff;
 extern crate byteorder;
+extern crate csv;
 extern crate densearray;
 extern crate rng;
 extern crate sharedmem;
@@ -11,6 +12,7 @@ extern crate turbojpeg;
 extern crate varraydb;
 
 extern crate rand;
+extern crate rustc_serialize;
 
 pub mod io;
 pub mod opt;

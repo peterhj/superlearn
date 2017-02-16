@@ -1,6 +1,5 @@
 use io::*;
 
-use densearray::prelude::*;
 use sharedmem::{MemoryMap, SharedMem};
 use tar::{Archive};
 
@@ -37,14 +36,14 @@ impl ImagenetTrainData {
 
     let reader = Cursor::new(archive_buf.clone());
     let mut archive = Archive::new(reader);
-    for wnid_entry in archive.entries().unwrap() {
+    for (wnid_idx, wnid_entry) in archive.entries().unwrap().enumerate() {
       let wnid_entry = wnid_entry.unwrap();
       let wnid_pos = wnid_entry.raw_file_position();
       let wnid_size = wnid_entry.header().entry_size().unwrap();
       assert_eq!(wnid_size, wnid_entry.header().size().unwrap());
 
       let mut wnid_archive = Archive::new(wnid_entry);
-      for im_entry in wnid_archive.entries().unwrap() {
+      for (im_idx, im_entry) in wnid_archive.entries().unwrap().enumerate() {
         let im_entry = im_entry.unwrap();
         let im_pos = im_entry.raw_file_position();
         let im_size = im_entry.header().entry_size().unwrap();
@@ -68,6 +67,10 @@ impl ImagenetTrainData {
           length:   im_size as usize,
           label:    Some(im_label),
         };
+        if wnid_idx == 0 && im_idx < 5 {
+          println!("DEBUG: imagenet data: offset: {} length: {} label: {:?}",
+              entry.offset, entry.length, entry.label);
+        }
         entries.push(entry);
       }
     }

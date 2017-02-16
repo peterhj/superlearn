@@ -1,12 +1,38 @@
 use rng::xorshift::*;
 
-use rand::{Rng};
+use rand::{Rng, SeedableRng};
+use rand::chacha::{ChaChaRng};
+
+pub mod codecs;
+pub mod formats;
 
 pub trait IndexedData {
   type Item;
 
   fn len(&self) -> usize;
   fn get(&mut self, idx: usize) -> Self::Item;
+
+  fn slice(self, lower: usize, upper: usize) -> SliceData<Self> where Self: Sized {
+    SliceData{
+      lower:    lower,
+      upper:    upper,
+      inner:    self,
+    }
+  }
+
+  fn cycle(self) -> CycleData<Self> where Self: Sized {
+    CycleData{
+      counter:  0,
+      inner:    self,
+    }
+  }
+
+  fn randomly_sample(self, mut seed_rng: ChaChaRng) -> RandomSampleData<Self> where Self: Sized {
+    RandomSampleData{
+      rng:      Xorshiftplus128Rng::from_seed([seed_rng.next_u64(), seed_rng.next_u64()]),
+      inner:    self,
+    }
+  }
 }
 
 #[derive(Clone)]

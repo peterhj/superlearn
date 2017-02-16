@@ -14,4 +14,7 @@ byteorder = "*"
 densearray = "*"
 rng = "*"
 sharedmem = "*"
+stb_image = { path = "../rust-stb-image" }
 tar = "*"
+turbojpeg = { path = "../libturbojpeg" }
+varraydb = { path = "../varraydb" }

@@ -4,6 +4,12 @@ use densearray::prelude::*;
 
 use std::rc::{Rc};
 
+pub struct BatchNormIo {
+  pub vars:         (),
+  pub stat_vars:    (),
+  pub ctrl:         (),
+}
+
 pub struct ClassifierIo<In> {
   pub x:        Rc<ArraySrc<In>>,
   pub y_label:  Rc<ArraySrc<Batch<u32>>>,
@@ -11,8 +17,21 @@ pub struct ClassifierIo<In> {
 }
 
 pub struct Classifier<In> {
-  pub loss:     Rc<AutodiffObjective>,
   pub io:       ClassifierIo<In>,
+  pub loss:     Rc<AutodiffObjective>,
+  pub train_vars:   (),
+  pub optimizer:    (),
+  pub batchnorm:    Option<BatchNormIo>,
+}
+
+impl<In> Classifier<In> {
+  pub fn train_step(&self, data: ()) {
+    unimplemented!();
+  }
+
+  pub fn validate(&self, data: ()) {
+    unimplemented!();
+  }
 }
 
 pub struct RegressorIo<In, Out> {

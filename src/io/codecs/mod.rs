@@ -43,15 +43,16 @@ impl Decoder for LabelSuffixDecoder {
 }
 
 #[derive(Default)]
-pub struct ImageTransposeDecoder;
+pub struct ImageTranspose;
 
-impl Decoder for ImageTransposeDecoder {
+impl Decoder for ImageTranspose {
   type Src = Array3d<u8, SharedMem<u8>>;
   type Dst = Array3d<u8, SharedMem<u8>>;
 
   fn decode(&mut self, src: Array3d<u8, SharedMem<u8>>) -> Array3d<u8, SharedMem<u8>> {
     let mut tpixels = Vec::with_capacity(src.dim().flat_len());
-    unsafe { tpixels.set_len(src.dim().flat_len()); }
+    //unsafe { tpixels.set_len(src.dim().flat_len()); }
+    tpixels.resize(src.dim().flat_len(), 0);
     let (chan, width, height) = src.dim();
     let mut p = 0;
     let pixels = src.as_slice();
@@ -68,7 +69,7 @@ impl Decoder for ImageTransposeDecoder {
   }
 }
 
-pub struct RandomImageRescale {
+pub struct ImageRandomRescale {
   lo_side:  usize,
   hi_side:  usize,
   rng:      Xorshiftplus128Rng,
@@ -77,9 +78,9 @@ pub struct RandomImageRescale {
   //upsamp:   HashMap<usize, IppImageResize<u8>>,
 }
 
-impl RandomImageRescale {
+impl ImageRandomRescale {
   pub fn new<R>(lo_side: usize, hi_side: usize, seed_rng: &mut R) -> Self where R: Rng {
-    RandomImageRescale{
+    ImageRandomRescale{
       lo_side:  lo_side,
       hi_side:  hi_side,
       rng:      Xorshiftplus128Rng::from_seed([seed_rng.next_u64(), seed_rng.next_u64()]),
@@ -88,36 +89,123 @@ impl RandomImageRescale {
   }
 }
 
-impl Decoder for RandomImageRescale {
+impl Decoder for ImageRandomRescale {
   type Src = Array3d<u8, SharedMem<u8>>;
   type Dst = Array3d<u8, SharedMem<u8>>;
 
   fn decode(&mut self, src: Array3d<u8, SharedMem<u8>>) -> Array3d<u8, SharedMem<u8>> {
     let rescale_side = self.rng.gen_range(self.lo_side, self.hi_side + 1);
-    let lesser_side = min(src.dim().0, src.dim().1);
+    let (src_w, src_h) = (src.dim().0, src.dim().1);
+    let lesser_side = min(src_w, src_h);
     let scale = rescale_side as f64 / lesser_side as f64;
-    let (new_w, new_h) = if lesser_side == src.dim().0 {
-      (lesser_side, (scale * src.dim().1 as f64).round() as usize)
-    } else if lesser_side == src.dim().1 {
-      ((scale * src.dim().0 as f64).round() as usize, lesser_side)
-    } else {
-      unreachable!();
-    };
-    if (new_w, new_h) == (src.dim().0, src.dim().1) {
+    let (dst_w, dst_h) =
+        if lesser_side == src_w {
+          (rescale_side, (scale * src_h as f64).round() as usize)
+        } else if lesser_side == src_h {
+          ((scale * src_w as f64).round() as usize, rescale_side)
+        } else {
+          unreachable!();
+        };
+    if 0 == self.rng.gen_range(0, 1000) {
+      println!("DEBUG: random rescale: rescale: {} lesser: {} src: {} x {} dst: {} x {}",
+          rescale_side, lesser_side, src_w, src_h, dst_w, dst_h);
+    }
+    if (dst_w, dst_h) == (src_w, src_h) {
       return src;
     }
-    let mut buf = Vec::<u8>::with_capacity(new_w * new_h * src.dim().2);
-    for c in 0 .. src.dim().2 {
-      if scale > 1.0 {
-        // TODO
-        let lanczos = IppImageResize::new(IppImageResizeKind::Lanczos{nlobes: 2}, src.dim().0, src.dim().1, new_w, new_h);
-      } else if scale < 1.0 {
-        // TODO
-        let cubic = IppImageResize::new(IppImageResizeKind::Cubic{b: 0.0, c: 0.5}, src.dim().0, src.dim().1, new_w, new_h);
-      } else {
-        unreachable!();
+    let mut buf = Vec::<u8>::with_capacity(dst_w * dst_h * src.dim().2);
+    buf.resize(dst_w * dst_h * src.dim().2, 0);
+    if scale > 1.0 {
+      let mut src_buf = IppImageBuf::alloc(src_w, src_h);
+      let mut dst_buf = IppImageBuf::alloc(dst_w, dst_h);
+      // FIXME(20170217): non linear resizes cause segfaults?
+      let mut resize = IppImageResize::new(IppImageResizeKind::Linear, src_w, src_h, dst_w, dst_h);
+      //let mut resize = IppImageResize::new(IppImageResizeKind::Cubic{b: 0.0, c: 0.5}, src_w, src_h, dst_w, dst_h);
+      //let mut resize = IppImageResize::new(IppImageResizeKind::Lanczos{nlobes: 2}, src_w, src_h, dst_w, dst_h);
+      for c in 0 .. src.dim().2 {
+        src_buf.load_packed(src_w, src_h, &src.as_slice()[c * src_w * src_h .. (c+1) * src_w * src_h]);
+        resize.resize(&src_buf, &mut dst_buf);
+        dst_buf.store_packed(dst_w, dst_h, &mut buf[c * dst_w * dst_h .. (c+1) * dst_w * dst_h]);
       }
+    } else if scale < 1.0 {
+      let mut tmp_buf = Vec::<u8>::with_capacity(src_w * src_h * src.dim().2);
+      tmp_buf.resize(src_w * src_h * src.dim().2, 0);
+      let mut src_buf = IppImageBuf::alloc(src_w, src_h);
+      let mut dst_buf = IppImageBuf::alloc(src_w, src_h);
+      let mut prev_w = src_w;
+      let mut prev_h = src_h;
+      while prev_w > dst_w || prev_h > dst_h {
+        let next_w = if prev_w >= 2 * dst_w {
+          (prev_w + 1) / 2
+        } else {
+          dst_w
+        };
+        let next_h = if prev_h >= 2 * dst_h {
+          (prev_h + 1) / 2
+        } else {
+          dst_h
+        };
+        let mut downsample = IppImageResize::new(IppImageResizeKind::Linear, prev_w, prev_h, next_w, next_h);
+        for c in 0 .. src.dim().2 {
+          if prev_w == src_w && prev_h == src_h {
+            src_buf.load_packed(src_w, src_h, &src.as_slice()[c * src_w * src_h .. (c+1) * src_w * src_h]);
+          } else {
+            src_buf.load_packed(prev_w, prev_h, &tmp_buf[c * prev_w * prev_h .. (c+1) * prev_w * prev_h]);
+          }
+          downsample.resize(&src_buf, &mut dst_buf);
+          if next_w == dst_w && next_h == dst_h {
+            dst_buf.store_packed(dst_w, dst_h, &mut buf[c * dst_w * dst_h .. (c+1) * dst_w * dst_h]);
+          } else {
+            dst_buf.store_packed(next_w, next_h, &mut tmp_buf[c * next_w * next_h .. (c+1) * next_w * next_h]);
+          }
+        }
+        prev_w = next_w;
+        prev_h = next_h;
+      }
+    } else {
+      unreachable!();
     }
-    unimplemented!();
+    Array3d::from_storage((dst_w, dst_h, src.dim().2), SharedMem::new(buf))
+  }
+}
+
+pub struct ImageRandomCrop {
+  crop_w:   usize,
+  crop_h:   usize,
+  rng:      Xorshiftplus128Rng,
+}
+
+impl ImageRandomCrop {
+  pub fn new<R>(crop_w: usize, crop_h: usize, seed_rng: &mut R) -> Self where R: Rng {
+    ImageRandomCrop{
+      crop_w:   crop_w,
+      crop_h:   crop_h,
+      rng:      Xorshiftplus128Rng::from_seed([seed_rng.next_u64(), seed_rng.next_u64()]),
+    }
+  }
+}
+
+impl Decoder for ImageRandomCrop {
+  type Src = Array3d<u8, SharedMem<u8>>;
+  type Dst = Array3d<u8, SharedMem<u8>>;
+
+  fn decode(&mut self, src: Array3d<u8, SharedMem<u8>>) -> Array3d<u8, SharedMem<u8>> {
+    let (src_w, src_h, _) = src.dim();
+    assert!(self.crop_w <= src_w);
+    assert!(self.crop_h <= src_h);
+    let offset_x = self.rng.gen_range(0, src_w - self.crop_w + 1);
+    let offset_y = self.rng.gen_range(0, src_h - self.crop_h + 1);
+    let mut buf = Vec::with_capacity(self.crop_w * self.crop_h * src.dim().2);
+    buf.resize(self.crop_w * self.crop_h * src.dim().2, 0);
+    for c in 0 .. src.dim().2 {
+      ipp_copy2d_u8(
+          self.crop_w, self.crop_h,
+          offset_x, offset_y, src_w,
+          &src.as_slice()[c * src_w * src_h .. (c+1) * src_w * src_h],
+          0, 0, self.crop_w,
+          &mut buf[c * self.crop_w * self.crop_h .. (c+1) * self.crop_w * self.crop_h],
+      );
+    }
+    Array3d::from_storage((self.crop_w, self.crop_h, src.dim().2), SharedMem::new(buf))
   }
 }

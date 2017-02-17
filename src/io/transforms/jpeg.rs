@@ -1,4 +1,4 @@
-use io::codecs::*;
+use super::{Transform};
 
 use densearray::prelude::*;
 use sharedmem::*;
@@ -15,11 +15,11 @@ impl Default for JpegDecoder {
   }
 }
 
-impl Decoder for JpegDecoder {
+impl Transform for JpegDecoder {
   type Src = SharedMem<u8>;
   type Dst = Result<Array3d<u8, SharedMem<u8>>, ()>;
 
-  fn decode(&mut self, buf: SharedMem<u8>) -> Result<Array3d<u8, SharedMem<u8>>, ()> {
+  fn transform(&mut self, buf: SharedMem<u8>) -> Result<Array3d<u8, SharedMem<u8>>, ()> {
     let (pixels, width, height) = match self.turbo.decode_rgb8(&*buf) {
       Ok((head, pixels)) => {
         (pixels, head.width, head.height)

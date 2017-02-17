@@ -6,8 +6,8 @@ use std::collections::{VecDeque};
 use std::sync::mpsc::{SyncSender, Receiver, sync_channel};
 use std::thread::{JoinHandle, spawn};
 
-pub mod codecs;
 pub mod formats;
+pub mod transforms;
 
 pub trait IndexedData {
   type Item;

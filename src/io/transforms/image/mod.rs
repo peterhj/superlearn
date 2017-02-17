@@ -1,55 +1,22 @@
-use byteorder::*;
+use super::{Transform};
+
 use densearray::prelude::*;
+use sharedmem::*;
+
 use ipp::*;
 use rng::xorshift::*;
-use sharedmem::*;
 
 use rand::{Rng, SeedableRng};
 use std::cmp::{min};
-use std::io::{Cursor};
-
-pub mod jpeg;
-
-pub trait Decoder {
-  type Src;
-  type Dst;
-
-  fn decode(&mut self, src: Self::Src) -> Self::Dst;
-}
-
-//pub fn default_decoder<F, Dec>() -> F where F: FnMut(Dec::Src) -> Dec::Dst, Dec: Decoder + Default {
-pub fn default_decoder<Dec>() -> impl FnMut(Dec::Src) -> Dec::Dst where Dec: Decoder + Default {
-  let mut decoder = <Dec as Default>::default();
-  move |src: Dec::Src| decoder.decode(src)
-}
-
-#[derive(Default)]
-pub struct LabelSuffixDecoder;
-
-impl Decoder for LabelSuffixDecoder {
-  type Src = SharedMem<u8>;
-  type Dst = (SharedMem<u8>, u32);
-
-  fn decode(&mut self, src: SharedMem<u8>) -> (SharedMem<u8>, u32) {
-    let buf_len = src.len();
-    assert!(buf_len >= 4);
-    let mut label_reader = Cursor::new(&src[buf_len - 4 .. ]);
-    let label: u32 = match label_reader.read_u32::<LittleEndian>() {
-      Err(e) => panic!("failed to decode u32 label suffix: '{:?}'", e),
-      Ok(x) => x,
-    };
-    (src.slice_v2( .. buf_len - 4), label)
-  }
-}
 
 #[derive(Default)]
 pub struct ImageTranspose;
 
-impl Decoder for ImageTranspose {
+impl Transform for ImageTranspose {
   type Src = Array3d<u8, SharedMem<u8>>;
   type Dst = Array3d<u8, SharedMem<u8>>;
 
-  fn decode(&mut self, src: Array3d<u8, SharedMem<u8>>) -> Array3d<u8, SharedMem<u8>> {
+  fn transform(&mut self, src: Array3d<u8, SharedMem<u8>>) -> Array3d<u8, SharedMem<u8>> {
     let mut tpixels = Vec::with_capacity(src.dim().flat_len());
     //unsafe { tpixels.set_len(src.dim().flat_len()); }
     tpixels.resize(src.dim().flat_len(), 0);
@@ -89,11 +56,11 @@ impl ImageRandomRescale {
   }
 }
 
-impl Decoder for ImageRandomRescale {
+impl Transform for ImageRandomRescale {
   type Src = Array3d<u8, SharedMem<u8>>;
   type Dst = Array3d<u8, SharedMem<u8>>;
 
-  fn decode(&mut self, src: Array3d<u8, SharedMem<u8>>) -> Array3d<u8, SharedMem<u8>> {
+  fn transform(&mut self, src: Array3d<u8, SharedMem<u8>>) -> Array3d<u8, SharedMem<u8>> {
     let rescale_side = self.rng.gen_range(self.lo_side, self.hi_side + 1);
     let (src_w, src_h) = (src.dim().0, src.dim().1);
     let lesser_side = min(src_w, src_h);
@@ -185,11 +152,11 @@ impl ImageRandomCrop {
   }
 }
 
-impl Decoder for ImageRandomCrop {
+impl Transform for ImageRandomCrop {
   type Src = Array3d<u8, SharedMem<u8>>;
   type Dst = Array3d<u8, SharedMem<u8>>;
 
-  fn decode(&mut self, src: Array3d<u8, SharedMem<u8>>) -> Array3d<u8, SharedMem<u8>> {
+  fn transform(&mut self, src: Array3d<u8, SharedMem<u8>>) -> Array3d<u8, SharedMem<u8>> {
     let (src_w, src_h, _) = src.dim();
     assert!(self.crop_w <= src_w);
     assert!(self.crop_h <= src_h);

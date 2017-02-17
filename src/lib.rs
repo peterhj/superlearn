@@ -4,6 +4,7 @@ extern crate arraydiff;
 extern crate byteorder;
 extern crate csv;
 extern crate densearray;
+extern crate ipp;
 extern crate rng;
 extern crate sharedmem;
 extern crate stb_image;

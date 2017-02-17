@@ -17,3 +17,4 @@ extern crate rustc_serialize;
 pub mod io;
 pub mod opt;
 pub mod templates;
+pub mod util;

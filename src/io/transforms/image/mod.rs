@@ -85,13 +85,10 @@ impl Transform for ImageRandomRescale {
     if scale > 1.0 {
       let mut src_buf = IppImageBuf::alloc(src_w, src_h);
       let mut dst_buf = IppImageBuf::alloc(dst_w, dst_h);
-      // FIXME(20170217): non linear resizes cause segfaults?
-      let mut resize = IppImageResize::new(IppImageResizeKind::Linear, src_w, src_h, dst_w, dst_h);
-      //let mut resize = IppImageResize::new(IppImageResizeKind::Cubic{b: 0.0, c: 0.5}, src_w, src_h, dst_w, dst_h);
-      //let mut resize = IppImageResize::new(IppImageResizeKind::Lanczos{nlobes: 2}, src_w, src_h, dst_w, dst_h);
+      let mut upsample = IppImageResize::new(IppImageResizeKind::Cubic{b: 0.0, c: 0.5}, src_w, src_h, dst_w, dst_h);
       for c in 0 .. src.dim().2 {
         src_buf.load_packed(src_w, src_h, &src.as_slice()[c * src_w * src_h .. (c+1) * src_w * src_h]);
-        resize.resize(&src_buf, &mut dst_buf);
+        upsample.resize(&src_buf, &mut dst_buf);
         dst_buf.store_packed(dst_w, dst_h, &mut buf[c * dst_w * dst_h .. (c+1) * dst_w * dst_h]);
       }
     } else if scale < 1.0 {
@@ -112,7 +109,12 @@ impl Transform for ImageRandomRescale {
         } else {
           dst_h
         };
-        let mut downsample = IppImageResize::new(IppImageResizeKind::Linear, prev_w, prev_h, next_w, next_h);
+        let downsample_kind = if next_w == dst_w && next_h == dst_h && prev_w != 2 * next_w && prev_h != 2 * next_h {
+          IppImageResizeKind::Lanczos{nlobes: 2}
+        } else {
+          IppImageResizeKind::Linear
+        };
+        let mut downsample = IppImageResize::new(downsample_kind, prev_w, prev_h, next_w, next_h);
         for c in 0 .. src.dim().2 {
           if prev_w == src_w && prev_h == src_h {
             src_buf.load_packed(src_w, src_h, &src.as_slice()[c * src_w * src_h .. (c+1) * src_w * src_h]);

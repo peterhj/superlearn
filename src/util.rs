@@ -22,7 +22,7 @@ impl Stopwatch {
     }
   }
 
-  pub fn lap(&mut self) -> &mut Stopwatch{
+  pub fn lap(&mut self) -> &mut Stopwatch {
     self.prev_time = self.lap_time;
     self.lap_time = Instant::now();
     self

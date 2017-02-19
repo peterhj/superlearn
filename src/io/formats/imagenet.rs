@@ -7,7 +7,7 @@ use tar::{Archive};
 //use byteorder::{ReadBytesExt, BigEndian};
 use std::collections::{HashMap};
 use std::fs::{File};
-use std::io::{Cursor};
+use std::io::{BufRead, BufReader, Cursor};
 use std::path::{PathBuf};
 
 #[derive(Clone)]
@@ -50,22 +50,41 @@ impl WordnetIlsvrc2012IdMap {
   }
 }
 
+#[derive(Clone)]
+pub struct Ilsvrc2012ValidGroundTruth {
+  ids:  Vec<i64>,
+}
+
+impl Ilsvrc2012ValidGroundTruth {
+  pub fn open(path: PathBuf) -> Self {
+    let file = File::open(&path).unwrap();
+    let reader = BufReader::new(file);
+    let mut ids = vec![];
+    for line in reader.lines() {
+      let line = line.unwrap();
+      let id: i64 = line.parse().unwrap();
+      ids.push(id);
+    }
+    Ilsvrc2012ValidGroundTruth{ids: ids}
+  }
+}
+
 #[derive(Clone, Copy)]
-pub struct ImagenetEntry {
+pub struct Entry {
   offset:   usize,
   length:   usize,
   label:    Option<u32>,
 }
 
 #[derive(Clone)]
-pub struct ImagenetTrainData {
+pub struct Ilsvrc2012TrainData {
   wnid_id_map:  WordnetIlsvrc2012IdMap,
-  entries:  Vec<ImagenetEntry>,
+  entries:  Vec<Entry>,
   data_buf: SharedMem<u8>,
 }
 
-impl ImagenetTrainData {
-  pub fn open(wnid_id_map: WordnetIlsvrc2012IdMap, archive_path: PathBuf) -> ImagenetTrainData {
+impl Ilsvrc2012TrainData {
+  pub fn open(wnid_id_map: WordnetIlsvrc2012IdMap, archive_path: PathBuf) -> Ilsvrc2012TrainData {
     let archive_file = File::open(&archive_path).unwrap();
     let file_meta = archive_file.metadata().unwrap();
     let file_sz = file_meta.len() as usize;
@@ -105,7 +124,7 @@ impl ImagenetTrainData {
         assert!(im_id >= 1);
         let im_label = (im_id - 1) as u32;
 
-        let entry = ImagenetEntry{
+        let entry = Entry{
           offset:   (wnid_pos + im_pos) as usize,
           length:   im_size as usize,
           label:    Some(im_label),
@@ -118,7 +137,7 @@ impl ImagenetTrainData {
       }
     }
 
-    ImagenetTrainData{
+    Ilsvrc2012TrainData{
       //wnid_to_label:    wnid_to_label,
       wnid_id_map:  wnid_id_map,
       entries:  entries,
@@ -131,7 +150,7 @@ impl ImagenetTrainData {
   }
 }
 
-impl IndexedData for ImagenetTrainData {
+impl IndexedData for Ilsvrc2012TrainData {
   type Item = (SharedMem<u8>, u32);
 
   fn len(&self) -> usize {
@@ -146,13 +165,61 @@ impl IndexedData for ImagenetTrainData {
 }
 
 #[derive(Clone)]
-pub struct ImagenetValidData {
-  //wnid_to_label:    HashMap<String, u32>,
-  entries:  Vec<ImagenetEntry>,
+pub struct Ilsvrc2012ValidData {
+  truth:    Ilsvrc2012ValidGroundTruth,
+  entries:  Vec<Entry>,
   data_buf: SharedMem<u8>,
 }
 
-impl IndexedData for ImagenetValidData {
+impl Ilsvrc2012ValidData {
+  pub fn open(truth: Ilsvrc2012ValidGroundTruth, archive_path: PathBuf) -> Self {
+    let archive_file = File::open(&archive_path).unwrap();
+    let file_meta = archive_file.metadata().unwrap();
+    let file_sz = file_meta.len() as usize;
+    let archive_buf = SharedMem::new(MemoryMap::open_with_offset(archive_file, 0, file_sz).unwrap());
+
+    let mut entries = Vec::new();
+
+    let reader = Cursor::new(archive_buf.clone());
+    let mut archive = Archive::new(reader);
+    for (_, im_entry) in archive.entries().unwrap().enumerate() {
+      let im_entry = im_entry.unwrap();
+      let im_pos = im_entry.raw_file_position();
+      let im_size = im_entry.header().entry_size().unwrap();
+      assert_eq!(im_size, im_entry.header().size().unwrap());
+
+      let im_path = im_entry.header().path().unwrap().into_owned();
+      let im_path_toks: Vec<_> = im_path.to_str().unwrap().splitn(2, ".").collect();
+      let im_stem_toks: Vec<_> = im_path_toks[0].splitn(3, "_").collect();
+      assert_eq!("val", im_stem_toks[1]);
+      let im_rank_tok = im_stem_toks[2].to_owned();
+
+      let im_rank: i64 = im_rank_tok.parse().unwrap();
+      assert!(im_rank >= 1);
+      let im_idx = (im_rank - 1) as usize;
+      let im_id = truth.ids[im_idx];
+      assert!(im_id >= 1);
+      let im_label = (im_id - 1) as u32;
+
+      let entry = Entry{
+        offset:   im_pos as usize,
+        length:   im_size as usize,
+        label:    Some(im_label),
+      };
+      entries.push(entry);
+    }
+
+    assert_eq!(truth.ids.len(), entries.len());
+
+    Ilsvrc2012ValidData{
+      truth:    truth,
+      entries:  entries,
+      data_buf: archive_buf,
+    }
+  }
+}
+
+impl IndexedData for Ilsvrc2012ValidData {
   type Item = (SharedMem<u8>, u32);
 
   fn len(&self) -> usize {
@@ -167,12 +234,12 @@ impl IndexedData for ImagenetValidData {
 }
 
 #[derive(Clone)]
-pub struct ImagenetTestData {
-  entries:  Vec<ImagenetEntry>,
+pub struct Ilsvrc2012TestData {
+  entries:  Vec<Entry>,
   data_buf: SharedMem<u8>,
 }
 
-impl IndexedData for ImagenetTestData {
+impl IndexedData for Ilsvrc2012TestData {
   type Item = SharedMem<u8>;
 
   fn len(&self) -> usize {

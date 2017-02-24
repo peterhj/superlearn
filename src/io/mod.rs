@@ -94,16 +94,16 @@ impl<Inner> Iterator for RandomSampleData<Inner> where Inner: IndexedData {
   }
 }
 
-pub fn async_bounded_queue<Inner>(capacity: usize, inner: Inner) -> AsyncBoundedQueue<<Inner as Iterator>::Item> where Inner: 'static + Iterator + Send, <Inner as Iterator>::Item: Send {
+pub fn async_queue<Inner>(capacity: usize, inner: Inner) -> AsyncQueue<<Inner as Iterator>::Item> where Inner: 'static + Iterator + Send, <Inner as Iterator>::Item: Send {
   let (tx, rx) = sync_channel(capacity);
   let h = spawn(move || {
-    let mut worker = AsyncBoundedQueueWorker{
+    let mut worker = AsyncQueueWorker{
       inner:    inner,
       tx:       tx,
     };
     worker._run_loop();
   });
-  AsyncBoundedQueue{
+  AsyncQueue{
     capacity:   capacity,
     queue:      VecDeque::with_capacity(capacity),
     h:          h,
@@ -112,12 +112,12 @@ pub fn async_bounded_queue<Inner>(capacity: usize, inner: Inner) -> AsyncBounded
   }
 }
 
-struct AsyncBoundedQueueWorker<Inner> where Inner: Iterator {
+struct AsyncQueueWorker<Inner> where Inner: Iterator {
   inner:    Inner,
   tx:       SyncSender<Option<Inner::Item>>,
 }
 
-impl<Inner> AsyncBoundedQueueWorker<Inner> where Inner: Iterator {
+impl<Inner> AsyncQueueWorker<Inner> where Inner: Iterator {
   pub fn _run_loop(&mut self) {
     loop {
       match self.inner.next() {
@@ -133,7 +133,7 @@ impl<Inner> AsyncBoundedQueueWorker<Inner> where Inner: Iterator {
   }
 }
 
-pub struct AsyncBoundedQueue<Item> {
+pub struct AsyncQueue<Item> {
   capacity: usize,
   queue:    VecDeque<Item>,
   h:        JoinHandle<()>,
@@ -141,7 +141,7 @@ pub struct AsyncBoundedQueue<Item> {
   closed:   bool,
 }
 
-impl<Item> Iterator for AsyncBoundedQueue<Item> {
+impl<Item> Iterator for AsyncQueue<Item> {
   type Item = Item;
 
   fn next(&mut self) -> Option<Self::Item> {
@@ -178,5 +178,123 @@ impl<Item> Iterator for AsyncBoundedQueue<Item> {
     assert!(!self.queue.is_empty());
     let item = self.queue.pop_front().unwrap();
     Some(item)
+  }
+}
+
+pub struct RoundRobinJoinIter<Inner> {
+  counter:  usize,
+  closed:   bool,
+  iters:    Vec<Inner>,
+}
+
+pub fn round_robin_join<Inner, F>(num_rounds: usize, iter_builder: F) -> RoundRobinJoinIter<Inner> where Inner: Iterator, F: Fn(usize) -> Inner {
+  let mut iters = Vec::with_capacity(num_rounds);
+  for rank in 0 .. num_rounds {
+    iters.push(iter_builder(rank));
+  }
+  RoundRobinJoinIter{
+    counter:    0,
+    closed:     false,
+    iters:      iters,
+  }
+}
+
+impl<Inner> Iterator for RoundRobinJoinIter<Inner> where Inner: Iterator {
+  type Item = <Inner as Iterator>::Item;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.closed {
+      return None;
+    }
+    let num_rounds = self.iters.len();
+    let item = self.iters[self.counter].next();
+    self.counter += 1;
+    if self.counter >= num_rounds {
+      self.counter = 0;
+    }
+    if item.is_none() {
+      self.closed = true;
+    }
+    item
+  }
+}
+
+pub fn round_robin_async_split<Inner>(num_rounds: usize, capacity: usize, inner: Inner) -> Vec<Option<RoundRobinSplitConsumer<<Inner as Iterator>::Item>>> where Inner: 'static + Iterator + Send, <Inner as Iterator>::Item: Send {
+  let mut txs = Vec::with_capacity(num_rounds);
+  let mut consumers = Vec::with_capacity(num_rounds);
+  for rank in 0 .. num_rounds {
+    let (tx, rx) = sync_channel(capacity);
+    txs.push(tx);
+    let cons = RoundRobinSplitConsumer{
+      rank:     rank,
+      closed:   false,
+      rx:       rx,
+    };
+    consumers.push(Some(cons));
+  }
+  let _ = spawn(move || {
+    let mut producer = RoundRobinSplitProducer{
+      counter:    0,
+      inner:      inner,
+      txs:        txs,
+    };
+    producer._run_loop();
+  });
+  consumers
+}
+
+pub struct RoundRobinSplitProducer<Inner> where Inner: Iterator {
+  counter:  usize,
+  inner:    Inner,
+  txs:      Vec<SyncSender<Option<Inner::Item>>>,
+}
+
+impl<Inner> RoundRobinSplitProducer<Inner> where Inner: Iterator {
+  pub fn _run_loop(&mut self) {
+    loop {
+      match self.inner.next() {
+        None => {
+          break;
+        }
+        Some(item) => {
+          self.txs[self.counter].send(Some(item)).unwrap();
+          self.counter += 1;
+          if self.counter >= self.txs.len() {
+            self.counter = 0;
+          }
+        }
+      }
+    }
+    for _ in 0 .. self.txs.len() {
+      self.txs[self.counter].send(None).unwrap();
+      self.counter += 1;
+      if self.counter >= self.txs.len() {
+        self.counter = 0;
+      }
+    }
+  }
+}
+
+pub struct RoundRobinSplitConsumer<Item> {
+  rank:     usize,
+  //capacity: usize,
+  closed:   bool,
+  //queue:    VecDeque<Item>,
+  rx:       Receiver<Option<Item>>,
+}
+
+impl<Item> Iterator for RoundRobinSplitConsumer<Item> {
+  type Item = Item;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.closed {
+      return None;
+    }
+    // TODO
+    match self.rx.recv() {
+      Err(_) => { None }
+      Ok(None) => { None }
+      Ok(Some(item)) => { Some(item) }
+    }
   }
 }

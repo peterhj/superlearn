@@ -51,6 +51,7 @@ impl MnistData {
     assert_eq!(f_n, l_n);
     assert_eq!(2, frame_dim.len());
     assert_eq!(0, label_dim.len());
+    //println!("DEBUG: mnist: {} {:?} {:?}", f_n, frame_dim, label_dim);
     MnistData{
       len:      f_n,
       frame_sz: frame_dim[0] * frame_dim[1],

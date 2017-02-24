@@ -18,7 +18,7 @@ pub struct ClassifierIo<In> {
 
 pub struct Classifier<In> {
   pub io:       ClassifierIo<In>,
-  pub loss:     Rc<AutodiffObjective>,
+  /*pub loss:     Rc<AutodiffObjective>,*/
   pub train_vars:   (),
   pub optimizer:    (),
   pub batchnorm:    Option<BatchNormIo>,
@@ -41,6 +41,6 @@ pub struct RegressorIo<In, Out> {
 }
 
 pub struct Regressor<In, Out> {
-  pub loss:     Rc<AutodiffObjective>,
   pub io:       RegressorIo<In, Out>,
+  /*pub loss:     Rc<AutodiffObjective>,*/
 }

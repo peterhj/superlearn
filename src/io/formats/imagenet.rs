@@ -90,7 +90,6 @@ impl Ilsvrc2012TrainData {
     let file_sz = file_meta.len() as usize;
     let archive_buf = SharedMem::new(MemoryMap::open_with_offset(archive_file, 0, file_sz).unwrap());
 
-    //let mut wnid_to_label = HashMap::new();
     let mut entries = Vec::new();
 
     let reader = Cursor::new(archive_buf.clone());
@@ -116,10 +115,6 @@ impl Ilsvrc2012TrainData {
         let im_stem_toks: Vec<_> = im_path_toks[0].splitn(2, "_").collect();
         let im_wnid = im_stem_toks[0].to_owned();
 
-        // FIXME(20170215): in fact we should use the "ILSVRC2012_ID" for the labels,
-        // which requires a preprocessed metadata file.
-        /*let maybe_new_label = wnid_to_label.len() as u32;
-        let im_label = *wnid_to_label.entry(im_wnid).or_insert(maybe_new_label);*/
         let im_id = *wnid_id_map.wnid_to_id.get(&im_wnid).unwrap();
         assert!(im_id >= 1);
         let im_label = (im_id - 1) as u32;
@@ -138,7 +133,6 @@ impl Ilsvrc2012TrainData {
     }
 
     Ilsvrc2012TrainData{
-      //wnid_to_label:    wnid_to_label,
       wnid_id_map:  wnid_id_map,
       entries:  entries,
       data_buf: archive_buf,

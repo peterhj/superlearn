@@ -4,6 +4,14 @@ use densearray::prelude::*;
 
 use std::rc::{Rc};
 
+pub struct CategoricalNLLLoss<Input, Label, Prob, Loss> {
+  pub x:        Rc<ArrayOp<Input>>,
+  pub y_label:  Rc<ArrayOp<Label>>,
+  pub y:        Rc<ArrayOp<Prob>>,
+  pub loss:     Rc<ArrayOp<Loss>>,
+  pub obj:      Rc<AutodiffSink>,
+}
+
 pub struct BatchNormIo {
   pub vars:         (),
   pub stat_vars:    (),

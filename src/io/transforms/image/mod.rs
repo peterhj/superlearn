@@ -50,7 +50,7 @@ impl ImageRandomRescale {
     ImageRandomRescale{
       lo_side:  lo_side,
       hi_side:  hi_side,
-      rng:      Xorshiftplus128Rng::from_seed([seed_rng.next_u64(), seed_rng.next_u64()]),
+      rng:      Xorshiftplus128Rng::from_seed(seed_rng),
       //pyramid:  IppImageDownsamplePyramid::new(),
     }
   }
@@ -149,7 +149,7 @@ impl ImageRandomCrop {
     ImageRandomCrop{
       crop_w:   crop_w,
       crop_h:   crop_h,
-      rng:      Xorshiftplus128Rng::from_seed([seed_rng.next_u64(), seed_rng.next_u64()]),
+      rng:      Xorshiftplus128Rng::from_seed(seed_rng),
     }
   }
 }
@@ -176,5 +176,46 @@ impl Transform for ImageRandomCrop {
       );
     }
     Array3d::from_storage((self.crop_w, self.crop_h, src.dim().2), SharedMem::new(buf))
+  }
+}
+
+pub struct ImageRandomFlipX {
+  rng:  Xorshiftplus128Rng,
+}
+
+impl ImageRandomFlipX {
+  pub fn new<R>(seed_rng: &mut R) -> Self where R: Rng {
+    ImageRandomFlipX{
+      rng:  Xorshiftplus128Rng::from_seed(seed_rng),
+    }
+  }
+}
+
+impl Transform for ImageRandomFlipX {
+  type Src = Array3d<u8, SharedMem<u8>>;
+  type Dst = Array3d<u8, SharedMem<u8>>;
+
+  fn transform(&mut self, src: Array3d<u8, SharedMem<u8>>) -> Array3d<u8, SharedMem<u8>> {
+    let (src_w, src_h, chan_dim) = src.dim();
+    let mut buf = Vec::with_capacity(src_w * src_h * chan_dim);
+    buf.resize(src_w * src_h * chan_dim, 0);
+    let src_buf = src.as_slice();
+    match self.rng.gen_range(0, 2) {
+      0 => {
+        buf.copy_from_slice(src_buf);
+      }
+      1 => {
+        for c in 0 .. chan_dim {
+          for y in 0 .. src_h {
+            for x in 0 .. src_w {
+              let xp = src_w - 1 - x;
+              buf[x + src_w * (y + src_h * c)] = src_buf[xp + src_w * (y + src_h * c)];
+            }
+          }
+        }
+      }
+      _ => unreachable!(),
+    }
+    Array3d::from_storage(src.dim(), SharedMem::new(buf))
   }
 }

@@ -73,10 +73,10 @@ impl Transform for ImageRandomRescale {
         } else {
           unreachable!();
         };
-    if 0 == self.rng.gen_range(0, 1000) {
+    /*if 0 == self.rng.gen_range(0, 1000) {
       println!("DEBUG: random rescale: rescale: {} lesser: {} src: {} x {} dst: {} x {}",
           rescale_side, lesser_side, src_w, src_h, dst_w, dst_h);
-    }
+    }*/
     if (dst_w, dst_h) == (src_w, src_h) {
       return src;
     }

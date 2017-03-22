@@ -118,6 +118,7 @@ impl Ilsvrc2012TrainData {
         let im_id = *wnid_id_map.wnid_to_id.get(&im_wnid).unwrap();
         assert!(im_id >= 1);
         let im_label = (im_id - 1) as u32;
+        assert!(im_label < 1000);
 
         let entry = Entry{
           offset:   (wnid_pos + im_pos) as usize,
@@ -194,6 +195,7 @@ impl Ilsvrc2012ValidData {
       let im_id = truth.ids[im_idx];
       assert!(im_id >= 1);
       let im_label = (im_id - 1) as u32;
+      assert!(im_label < 1000);
 
       let entry = Entry{
         offset:   im_pos as usize,

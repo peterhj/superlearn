@@ -15,7 +15,10 @@ pub struct CategoricalNLLLoss<Input, Label, Prob, Loss> {
   pub prob_vars:    VarSet,
   pub loss_vars:    VarSet,
   pub const_vars:   VarSet,
+  //pub param_dim:    usize,
   pub param_vars:   VarSet,
+  //pub keep_vars:    VarSet,
+  //pub keep_grads:   VarSet,
 }
 
 pub struct BatchNormIo {

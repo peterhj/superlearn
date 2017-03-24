@@ -15,8 +15,8 @@ pub trait IndexedData {
   fn len(&self) -> usize;
   fn get(&mut self, idx: usize) -> Self::Item;
 
-  fn slice(self, lower: usize, upper: usize) -> SliceData<Self> where Self: Sized {
-    SliceData{
+  fn range(self, lower: usize, upper: usize) -> RangeData<Self> where Self: Sized {
+    RangeData{
       lower:    lower,
       upper:    upper,
       inner:    self,
@@ -39,13 +39,13 @@ pub trait IndexedData {
 }
 
 #[derive(Clone)]
-pub struct SliceData<Inner> where Inner: IndexedData {
+pub struct RangeData<Inner> where Inner: IndexedData {
   lower:    usize,
   upper:    usize,
   inner:    Inner,
 }
 
-impl<Inner> IndexedData for SliceData<Inner> where Inner: IndexedData {
+impl<Inner> IndexedData for RangeData<Inner> where Inner: IndexedData {
   type Item = Inner::Item;
 
   fn len(&self) -> usize {
@@ -65,7 +65,7 @@ pub struct CycleData<Inner> where Inner: IndexedData {
 }
 
 impl<Inner> Iterator for CycleData<Inner> where Inner: IndexedData {
-  type Item = Inner::Item;
+  type Item = (usize, Inner::Item);
 
   fn next(&mut self) -> Option<Self::Item> {
     let idx = self.counter;
@@ -74,7 +74,7 @@ impl<Inner> Iterator for CycleData<Inner> where Inner: IndexedData {
       self.counter = 0;
     }
     let item = self.inner.get(idx);
-    Some(item)
+    Some((idx, item))
   }
 }
 
@@ -85,12 +85,12 @@ pub struct RandomSampleData<Inner> where Inner: IndexedData {
 }
 
 impl<Inner> Iterator for RandomSampleData<Inner> where Inner: IndexedData {
-  type Item = Inner::Item;
+  type Item = (usize, Inner::Item);
 
   fn next(&mut self) -> Option<Self::Item> {
     let idx = self.rng.gen_range(0, self.inner.len());
     let item = self.inner.get(idx);
-    Some(item)
+    Some((idx, item))
   }
 }
 

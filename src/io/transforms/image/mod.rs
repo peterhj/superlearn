@@ -179,6 +179,45 @@ impl Transform for ImageRandomCrop {
   }
 }
 
+pub struct ImageCenterCrop {
+  crop_w:   usize,
+  crop_h:   usize,
+}
+
+impl ImageCenterCrop {
+  pub fn new(crop_w: usize, crop_h: usize) -> Self {
+    ImageCenterCrop{
+      crop_w:   crop_w,
+      crop_h:   crop_h,
+    }
+  }
+}
+
+impl Transform for ImageCenterCrop {
+  type Src = Array3d<u8, SharedMem<u8>>;
+  type Dst = Array3d<u8, SharedMem<u8>>;
+
+  fn transform(&mut self, src: Array3d<u8, SharedMem<u8>>) -> Array3d<u8, SharedMem<u8>> {
+    let (src_w, src_h, _) = src.dim();
+    assert!(self.crop_w <= src_w);
+    assert!(self.crop_h <= src_h);
+    let offset_x = (src_w - self.crop_w) / 2;
+    let offset_y = (src_h - self.crop_h) / 2;
+    let mut buf = Vec::with_capacity(self.crop_w * self.crop_h * src.dim().2);
+    buf.resize(self.crop_w * self.crop_h * src.dim().2, 0);
+    for c in 0 .. src.dim().2 {
+      ipp_copy2d_u8(
+          self.crop_w, self.crop_h,
+          offset_x, offset_y, src_w,
+          &src.as_slice()[c * src_w * src_h .. (c+1) * src_w * src_h],
+          0, 0, self.crop_w,
+          &mut buf[c * self.crop_w * self.crop_h .. (c+1) * self.crop_w * self.crop_h],
+      );
+    }
+    Array3d::from_storage((self.crop_w, self.crop_h, src.dim().2), SharedMem::new(buf))
+  }
+}
+
 pub struct ImageRandomFlipX {
   rng:  Xorshiftplus128Rng,
 }

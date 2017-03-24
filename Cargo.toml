@@ -14,6 +14,7 @@ arraydiff = { path = "../arraydiff" }
 byteorder = "*"
 csv = "*"
 densearray = "*"
+extar = { path = "../extar" }
 ipp = { path = "../libipp" }
 rng = "*"
 sharedmem = "*"

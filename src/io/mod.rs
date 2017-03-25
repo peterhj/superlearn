@@ -2,6 +2,7 @@ use rng::xorshift::*;
 
 use rand::{Rng, SeedableRng};
 use rand::chacha::{ChaChaRng};
+use std::cmp::{min};
 use std::collections::{VecDeque};
 use std::sync::mpsc::{SyncSender, Receiver, sync_channel};
 use std::thread::{JoinHandle, spawn};
@@ -16,6 +17,22 @@ pub trait IndexedData {
   fn get(&mut self, idx: usize) -> Self::Item;
 
   fn range(self, lower: usize, upper: usize) -> RangeData<Self> where Self: Sized {
+    assert!(upper <= self.len());
+    assert!(lower <= upper);
+    RangeData{
+      lower:    lower,
+      upper:    upper,
+      inner:    self,
+    }
+  }
+
+  fn partition(self, part: usize, num_parts: usize) -> RangeData<Self> where Self: Sized {
+    assert!(part < num_parts);
+    let data_len = self.len();
+    let max_part_sz = (data_len + num_parts - 1) / num_parts;
+    let lower = part * max_part_sz;
+    let part_sz = min(max_part_sz, data_len - lower);
+    let upper = lower + part_sz;
     RangeData{
       lower:    lower,
       upper:    upper,

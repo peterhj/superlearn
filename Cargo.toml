@@ -19,6 +19,7 @@ ipp = { path = "../libipp" }
 rng = "*"
 sharedmem = "*"
 stb_image = { path = "../rust-stb-image" }
+stopwatch = { path = "../stopwatch" }
 tar = "*"
 turbojpeg = { path = "../libturbojpeg" }
 varraydb = { path = "../varraydb" }

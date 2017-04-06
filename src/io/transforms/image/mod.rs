@@ -8,6 +8,115 @@ use rng::xorshift::*;
 
 use rand::{Rng, SeedableRng};
 use std::cmp::{min};
+use std::marker::{PhantomData};
+
+#[derive(Default)]
+pub struct ImageCast<T, U> {
+  _marker:  PhantomData<fn (T, U)>,
+}
+
+impl Transform for ImageCast<u8, f32> {
+  type Src = Array3d<u8, SharedMem<u8>>;
+  type Dst = Array3d<f32, SharedMem<f32>>;
+
+  fn transform(&mut self, src: Self::Src) -> Self::Dst {
+    let mut buf = Vec::with_capacity(src.dim().flat_len());
+    unsafe { buf.set_len(src.dim().flat_len()) };
+    buf.flatten_mut().cast_from_u8(src.as_view().flatten());
+    Array3d::from_storage(src.dim(), SharedMem::new(buf))
+  }
+}
+
+impl Transform for ImageCast<f32, u8> {
+  type Src = Array3d<f32, SharedMem<f32>>;
+  type Dst = Array3d<u8, SharedMem<u8>>;
+
+  fn transform(&mut self, src: Self::Src) -> Self::Dst {
+    let mut buf = Vec::with_capacity(src.dim().flat_len());
+    unsafe { buf.set_len(src.dim().flat_len()) };
+    buf.flatten_mut().round_clamp_from_f32(src.as_view().flatten());
+    Array3d::from_storage(src.dim(), SharedMem::new(buf))
+  }
+}
+
+pub struct PlanarImageZeroPad {
+  pad_w:    usize,
+  pad_h:    usize,
+}
+
+impl PlanarImageZeroPad {
+  pub fn new(pad_w: usize, pad_h: usize) -> Self {
+    PlanarImageZeroPad{
+      pad_w:    pad_w,
+      pad_h:    pad_h,
+    }
+  }
+}
+
+impl Transform for PlanarImageZeroPad {
+  type Src = Array3d<u8, SharedMem<u8>>;
+  type Dst = Array3d<u8, SharedMem<u8>>;
+
+  fn transform(&mut self, src: Array3d<u8, SharedMem<u8>>) -> Array3d<u8, SharedMem<u8>> {
+    let (src_w, src_h, chan_dim) = src.dim();
+    let dst_w = src_w + 2 * self.pad_w;
+    let dst_h = src_h + 2 * self.pad_h;
+    let mut buf = Vec::with_capacity(dst_w * dst_h * chan_dim);
+    buf.resize(dst_w * dst_h * chan_dim, 0);
+    let src_buf = src.as_slice();
+    for c in 0 .. chan_dim {
+      for y in 0 .. src_h {
+        for x in 0 .. src_w {
+          let px = x + self.pad_w;
+          let py = y + self.pad_h;
+          buf[px + dst_w * (py + dst_h * c)] = src_buf[x + src_w * (y + src_h * c)];
+        }
+      }
+    }
+    Array3d::from_storage((dst_w, dst_h, chan_dim), SharedMem::new(buf))
+  }
+}
+
+pub struct PlanarImageLinearResize<T> {
+  src_dim:  (usize, usize),
+  dst_dim:  (usize, usize),
+  _marker:  PhantomData<fn (T)>,
+}
+
+impl<T> PlanarImageLinearResize<T> {
+  pub fn new(src_dim: (usize, usize), dst_dim: (usize, usize)) -> Self {
+    PlanarImageLinearResize{
+      src_dim:  src_dim,
+      dst_dim:  dst_dim,
+      _marker:  PhantomData,
+    }
+  }
+}
+
+impl Transform for PlanarImageLinearResize<f32> {
+  type Src = Array3d<f32, SharedMem<f32>>;
+  type Dst = Array3d<f32, SharedMem<f32>>;
+
+  fn transform(&mut self, src: Array3d<f32, SharedMem<f32>>) -> Array3d<f32, SharedMem<f32>> {
+    // TODO: use `self.src_dim`.
+    let (src_w, src_h) = (src.dim().0, src.dim().1);
+    let (dst_w, dst_h) = self.dst_dim;
+    if (dst_w, dst_h) == (src_w, src_h) {
+      return src;
+    }
+    let mut buf = Vec::<f32>::with_capacity(dst_w * dst_h * src.dim().2);
+    buf.resize(dst_w * dst_h * src.dim().2, 0.0);
+    let mut src_buf = IppImageBuf::alloc(src_w, src_h);
+    let mut dst_buf = IppImageBuf::alloc(dst_w, dst_h);
+    let mut resizer = IppImageResize::create(IppImageResizeKind::Linear, src_w, src_h, dst_w, dst_h).unwrap();
+    for c in 0 .. src.dim().2 {
+      src_buf.write(&src.as_slice()[c * src_w * src_h .. (c+1) * src_w * src_h]);
+      resizer.resize(&src_buf, &mut dst_buf);
+      dst_buf.read(&mut buf[c * dst_w * dst_h .. (c+1) * dst_w * dst_h]);
+    }
+    Array3d::from_storage((dst_w, dst_h, src.dim().2), SharedMem::new(buf))
+  }
+}
 
 #[derive(Default)]
 pub struct ImageTranspose;
@@ -85,11 +194,11 @@ impl Transform for ImageRandomRescale {
     if scale > 1.0 {
       let mut src_buf = IppImageBuf::alloc(src_w, src_h);
       let mut dst_buf = IppImageBuf::alloc(dst_w, dst_h);
-      let mut upsample = IppImageResize::new(IppImageResizeKind::Cubic{b: 0.0, c: 0.5}, src_w, src_h, dst_w, dst_h);
+      let mut upsample = IppImageResize::create(IppImageResizeKind::Cubic{b: 0.0, c: 0.5}, src_w, src_h, dst_w, dst_h).unwrap();
       for c in 0 .. src.dim().2 {
-        src_buf.load_packed(src_w, src_h, &src.as_slice()[c * src_w * src_h .. (c+1) * src_w * src_h]);
+        src_buf.write_strided(src_w, src_h, &src.as_slice()[c * src_w * src_h .. (c+1) * src_w * src_h]);
         upsample.resize(&src_buf, &mut dst_buf);
-        dst_buf.store_packed(dst_w, dst_h, &mut buf[c * dst_w * dst_h .. (c+1) * dst_w * dst_h]);
+        dst_buf.read_strided(dst_w, dst_h, &mut buf[c * dst_w * dst_h .. (c+1) * dst_w * dst_h]);
       }
     } else if scale < 1.0 {
       let mut tmp_buf = Vec::<u8>::with_capacity(src_w * src_h * src.dim().2);
@@ -109,28 +218,32 @@ impl Transform for ImageRandomRescale {
         } else {
           dst_h
         };
+        // FIXME(20170325)
         let downsample_kind = if next_w == dst_w && next_h == dst_h && prev_w != 2 * next_w && prev_h != 2 * next_h {
+        //let downsample_kind = if next_w == dst_w && next_h == dst_h && (prev_w < 2 * next_w || prev_h < 2 * next_h) {
           IppImageResizeKind::Lanczos{nlobes: 2}
         } else {
           IppImageResizeKind::Linear
         };
-        let mut downsample = IppImageResize::new(downsample_kind, prev_w, prev_h, next_w, next_h);
+        let mut downsample = IppImageResize::create(downsample_kind, prev_w, prev_h, next_w, next_h).unwrap();
         for c in 0 .. src.dim().2 {
           if prev_w == src_w && prev_h == src_h {
-            src_buf.load_packed(src_w, src_h, &src.as_slice()[c * src_w * src_h .. (c+1) * src_w * src_h]);
+            src_buf.write_strided(src_w, src_h, &src.as_slice()[c * src_w * src_h .. (c+1) * src_w * src_h]);
           } else {
-            src_buf.load_packed(prev_w, prev_h, &tmp_buf[c * prev_w * prev_h .. (c+1) * prev_w * prev_h]);
+            src_buf.write_strided(prev_w, prev_h, &tmp_buf[c * prev_w * prev_h .. (c+1) * prev_w * prev_h]);
           }
           downsample.resize(&src_buf, &mut dst_buf);
           if next_w == dst_w && next_h == dst_h {
-            dst_buf.store_packed(dst_w, dst_h, &mut buf[c * dst_w * dst_h .. (c+1) * dst_w * dst_h]);
+            dst_buf.read_strided(dst_w, dst_h, &mut buf[c * dst_w * dst_h .. (c+1) * dst_w * dst_h]);
           } else {
-            dst_buf.store_packed(next_w, next_h, &mut tmp_buf[c * next_w * next_h .. (c+1) * next_w * next_h]);
+            dst_buf.read_strided(next_w, next_h, &mut tmp_buf[c * next_w * next_h .. (c+1) * next_w * next_h]);
           }
         }
         prev_w = next_w;
         prev_h = next_h;
       }
+      assert_eq!(prev_w, dst_w);
+      assert_eq!(prev_h, dst_h);
     } else {
       unreachable!();
     }
